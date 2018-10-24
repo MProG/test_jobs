@@ -24,42 +24,47 @@ class MissinsContoller
   PRICE_LIST = { first_checkin: 10, last_checkout: 5, checkout_checkin: 10 }
   attr_accessor :notifications
 
-  def initialize()
-    @notifications = []
-  end
-
   def handle_cleanings(input)
-    @result = [];
+    @notifications = []
+    result = [];
 
     input[:listings].each do |room|
-      room_booking = parse_dates(input[:bookings].select{|owner_room| owner_room[:listing_id] == room[:id]})
-      room_reservations = parse_dates(input[:reservations].select{|reserv| reserv[:listing_id] == room[:id]})
+      room_booking = room_entities(room[:id], input[:bookings]).map{|el| parse_dates(el)}.compact
+      room_reservations = room_entities(room[:id], input[:reservations]).map{|el| parse_dates(el)}.compact
 
       room_booking.each do |booking|
         booking_reservations = room_reservations.select{|reserv| check_crossing_period(booking, reserv)}
-        @result.push(create_mission(room, booking[:start_date], "first_checkin"));
-        @result.push(create_mission(room, booking[:end_date], "last_checkout"));
+        result.push(create_mission(room, booking[:start_date], "first_checkin"));
+        result.push(create_mission(room, booking[:end_date], "last_checkout"));
 
         booking_reservations.each do |reserv|
-          @result.push(create_mission(room, reserv[:end_date], "checkout_checkin")) if reserv[:end_date] != booking[:end_date];
+          result.push(create_mission(room, reserv[:end_date], "checkout_checkin")) if reserv[:end_date] != booking[:end_date];
         end
       end
     end
-    {"missions" => @result}
+    {"missions" => result}
   end
 
-  def parse_dates(entities)
-    entities.map do |entity|
-      begin
-        entity[:parsed_start_date] = Date.parse(entity[:start_date]);
-        entity[:parsed_end_date] = Date.parse(entity[:end_date]);
-        entity[:period] = Date.parse(entity[:start_date])..Date.parse(entity[:end_date])
-        entity
-      rescue => e
-        @notifications << {description: e.to_s, listing_id: entity[:listing_id], id: entity[:id]}
-        nil
-      end
-    end.compact
+  def last_handling_logs
+    @notifications || []
+  end
+
+  private
+
+  def room_entities(room_id, entities = [])
+    entities.select{|el| el[:listing_id] == room_id}
+  end
+
+  def parse_dates(entity)
+    begin
+      entity[:parsed_start_date] = Date.parse(entity[:start_date]);
+      entity[:parsed_end_date] = Date.parse(entity[:end_date]);
+      entity[:period] = Date.parse(entity[:start_date])..Date.parse(entity[:end_date])
+      entity
+    rescue => e
+      @notifications << {description: e.to_s, listing_id: entity[:listing_id], id: entity[:id]}
+      nil
+    end
   end
 
   def check_crossing_period(booking, reserv)
@@ -71,7 +76,9 @@ class MissinsContoller
   end
 end
 
-p MissinsContoller.new().handle_cleanings(input)
+missions_entity = MissinsContoller.new()
+p missions_entity.handle_cleanings(input)
+p missions_entity.last_handling_logs
 
 RSpec.describe MissinsContoller do
   subject { described_class.new() }
@@ -172,7 +179,7 @@ RSpec.describe MissinsContoller do
     expect(result[1][:date]).to eql(input[:bookings][0][:end_date])
   end
 
-  it "process incorrect date" do
+  it "process booking incorrect date and ignor booking with incorrect date" do
     input = {
       "listings": [
         { "id": 1, "num_rooms": 2 },
@@ -187,7 +194,23 @@ RSpec.describe MissinsContoller do
     result = subject.handle_cleanings(input)["missions"]
 
     expect(result.length).to eql(0)
-    expect(subject.notifications).to eql([{:description=>"invalid date", :id=>1, :listing_id=>1}])
+  end
+
+  it "proccess booking with incorrect date and return logs" do
+    input = {
+      "listings": [
+        { "id": 1, "num_rooms": 2 },
+      ],
+      "bookings": [
+        { "id": 1, "listing_id": 1, "start_date": "hello", "end_date": "2016-10-15" },
+      ],
+      "reservations": [
+        { "id": 1, "listing_id": 1, "start_date": "2016-10-14", "end_date": "2016-10-16" }
+      ]
+    }
+    subject.handle_cleanings(input)["missions"]
+
+    expect(subject.last_handling_logs).to eql([{:description=>"invalid date", :id=>1, :listing_id=>1}])
   end
 
   it "ignor reservations with incorrect date" do
@@ -207,6 +230,22 @@ RSpec.describe MissinsContoller do
     expect(result.length).to eql(2)
     expect(result[0][:date]).to eql(input[:bookings][0][:start_date])
     expect(result[1][:date]).to eql(input[:bookings][0][:end_date])
-    expect(subject.notifications).to eql([{:description=>"invalid date", :id=>1, :listing_id=>1}])
+  end
+
+  it "proccess reservations with incorrect date and return logs" do
+    input = {
+      "listings": [
+        { "id": 1, "num_rooms": 2 },
+      ],
+      "bookings": [
+        { "id": 1, "listing_id": 1, "start_date": "2016-10-10", "end_date": "2016-10-15" },
+      ],
+      "reservations": [
+        { "id": 1, "listing_id": 1, "start_date": "hello", "end_date": "2016-10-14" }
+      ]
+    }
+    subject.handle_cleanings(input)["missions"]
+
+    expect(subject.last_handling_logs).to eql([{:description=>"invalid date", :id=>1, :listing_id=>1}])
   end
 end
