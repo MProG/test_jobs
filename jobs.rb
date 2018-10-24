@@ -83,7 +83,7 @@ p missions_entity.last_handling_logs
 RSpec.describe MissinsContoller do
   subject { described_class.new() }
 
-  it "create missions" do
+  it "success create missions" do
     input = {
       "listings": [
         { "id": 1, "num_rooms": 2 },
@@ -118,8 +118,8 @@ RSpec.describe MissinsContoller do
 
     result = subject.handle_cleanings(input)["missions"]
 
-
     expect((result && expected_result[:missions])).to eql(expected_result[:missions])
+    expect(subject.last_handling_logs).to eql([])
   end
 
   it "ignore reservations for period outside the booking period" do
