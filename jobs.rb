@@ -29,8 +29,8 @@ class MissinsContoller
     result = [];
 
     input[:listings].each do |room|
-      room_booking = room_entities(room[:id], input[:bookings]).map{|el| parse_dates(el)}.compact
-      room_reservations = room_entities(room[:id], input[:reservations]).map{|el| parse_dates(el)}.compact
+      room_booking = room_entities(room[:id], input[:bookings]).map{|el| parse_dates(el, "booking")}.compact
+      room_reservations = room_entities(room[:id], input[:reservations]).map{|el| parse_dates(el, "reservation")}.compact
 
       room_booking.each do |booking|
         booking_reservations = room_reservations.select{|reserv| check_crossing_period(booking, reserv)}
@@ -55,14 +55,14 @@ class MissinsContoller
     entities.select{|el| el[:listing_id] == room_id}
   end
 
-  def parse_dates(entity)
+  def parse_dates(entity, entity_type)
     begin
       entity[:parsed_start_date] = Date.parse(entity[:start_date]);
       entity[:parsed_end_date] = Date.parse(entity[:end_date]);
       entity[:period] = Date.parse(entity[:start_date])..Date.parse(entity[:end_date])
       entity
     rescue => e
-      @notifications << {description: e.to_s, listing_id: entity[:listing_id], id: entity[:id]}
+      @notifications << {description: e.to_s, listing_id: entity[:listing_id], id: entity[:id], entity_type: entity_type}
       nil
     end
   end
@@ -210,7 +210,7 @@ RSpec.describe MissinsContoller do
     }
     subject.handle_cleanings(input)["missions"]
 
-    expect(subject.last_handling_logs).to eql([{:description=>"invalid date", :id=>1, :listing_id=>1}])
+    expect(subject.last_handling_logs).to eql([{:description=>"invalid date", :entity_type=>"booking", :id=>1, :listing_id=>1}])
   end
 
   it "ignor reservations with incorrect date" do
@@ -246,6 +246,6 @@ RSpec.describe MissinsContoller do
     }
     subject.handle_cleanings(input)["missions"]
 
-    expect(subject.last_handling_logs).to eql([{:description=>"invalid date", :id=>1, :listing_id=>1}])
+    expect(subject.last_handling_logs).to eql([{:description=>"invalid date", :entity_type=>"reservation", :id=>1, :listing_id=>1}])
   end
 end
